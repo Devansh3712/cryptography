@@ -1,6 +1,6 @@
 # Reference:
 # https://page.math.tu-berlin.de/~kant/teaching/hess/krypto-ws2006/des.htm
-from typing import Tuple
+from typing import List, Tuple
 
 # DES is a block cipher - operates on plaintext blocks of 64 bits
 # and returns a ciphertext of the same size. Thus DES results in
@@ -8,6 +8,8 @@ from typing import Tuple
 # be a 0 or 1.
 BLOCK_SIZE = 64
 ROUNDS = 16
+
+Block = List[int]
 BoxType = Tuple[Tuple[int, ...], ...]
 
 # 64-bit key is permuted according to the following permutation
@@ -161,11 +163,11 @@ def bin_to_dec(x: list[int]) -> int:
     return decimal
 
 
-def permute(block: list[int], table: BoxType):
+def permute(block: Block, table: BoxType) -> Block:
     return [block[index - 1] for row in table for index in row]
 
 
-def generate_subkeys(key_bits: list[int]) -> list[list[int]]:
+def generate_subkeys(key_bits: Block) -> list[Block]:
     # DES operates on 64 bit blocks using key sizes of 56 bits. The
     # keys are actually stored as being 64 bits long, but every 8th
     # bit in the key is not used
@@ -194,7 +196,7 @@ def generate_subkeys(key_bits: list[int]) -> list[list[int]]:
     return subkeys
 
 
-def substitute(block: list[int], table: BoxType):
+def substitute(block: Block, table: BoxType) -> Block:
     # First and last bits of block represent in base 2 a number in the
     # decimal range [0, 3] (binary 0 to 11), representing a row
     row = bin_to_dec(block[0::5])
@@ -208,7 +210,7 @@ def substitute(block: list[int], table: BoxType):
     return hex_to_bin(table[row][col])[-4:]
 
 
-def feistel(block: list[int], subkey: list[int]):
+def feistel(block: Block, subkey: list[int]) -> Block:
     # To calculate f, we first expand each block Rn-1 from 32 bits to
     # 48 bits
     e = permute(block, e_table)
@@ -241,7 +243,7 @@ def feistel(block: list[int], subkey: list[int]):
     return f
 
 
-def des_rounds(initial_permutation: list[int], subkeys: list[list[int]]):
+def des_rounds(initial_permutation: Block, subkeys: list[Block]) -> Block:
     # Divide the permuted block into a left half L0 of 32 bits, and a right
     # half R0 of 32 bits
     l = initial_permutation[:32]
@@ -264,7 +266,7 @@ def des_rounds(initial_permutation: list[int], subkeys: list[list[int]]):
     return r + l
 
 
-def des_encrypt(message: int, key: int):
+def des_encrypt(message: int, key: int) -> Block:
     key_bits = hex_to_bin(key)
     message_bits = hex_to_bin(message)
     subkeys = generate_subkeys(key_bits)
