@@ -1,3 +1,4 @@
+# Data Encryption Standard (DES)
 # Reference:
 # https://page.math.tu-berlin.de/~kant/teaching/hess/krypto-ws2006/des.htm
 from typing import List, Tuple
@@ -276,11 +277,26 @@ def des_encrypt(message: int, key: int) -> Block:
     return permute(ciphertext, ip_inverse)
 
 
+def des_decrypt(ciphertext: int, key: int) -> Block:
+    key_bits = hex_to_bin(key)
+    ciphertext_bits = hex_to_bin(ciphertext)
+    subkeys = generate_subkeys(key_bits)
+    # Decryption is inverse of encryption, following the same steps
+    # but reversing the order in which the subkeys are applied
+    subkeys.reverse()
+    initial_permutation = permute(ciphertext_bits, ip)
+    plaintext = des_rounds(initial_permutation, subkeys)
+    return permute(plaintext, ip_inverse)
+
+
 # Key should be of 64 bits
 key = 0x133457799BBCDFF1
 # Message should be in blocks of 64 bit, if less than that it should
 # be padded with zeores
 message = 0x74616E7573687269
-ciphertext = des_encrypt(message, key)
 
+ciphertext = des_encrypt(message, key)
 assert 0x1C43A6059EAD0F58 == bin_to_dec(ciphertext)
+
+plaintext = des_decrypt(bin_to_dec(ciphertext), key)
+assert message == bin_to_dec(plaintext)
