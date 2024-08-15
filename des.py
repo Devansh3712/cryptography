@@ -1,30 +1,13 @@
 # Reference:
 # https://page.math.tu-berlin.de/~kant/teaching/hess/krypto-ws2006/des.htm
+from typing import Tuple
 
 # DES is a block cipher - operates on plaintext blocks of 64 bits
 # and returns a ciphertext of the same size. Thus DES results in
 # permutation among 2^64 possible arrangements, each of which may
 # be a 0 or 1.
 BLOCK_SIZE = 64
-
-
-def hex_to_bin(x: int) -> list[int]:
-    x_bits = [0] * BLOCK_SIZE
-    for i in range(BLOCK_SIZE):
-        x_bits[BLOCK_SIZE - 1 - i] = (x >> i) & 1
-    return x_bits
-
-
-def bin_to_dec(x: list[int]) -> int:
-    decimal = 0
-    for digit in x:
-        decimal = decimal * 2 + digit
-    return decimal
-
-
-# Key should be of 64 bits
-key = 0x133457799BBCDFF1
-key_bits = hex_to_bin(key)
+BoxType = Tuple[Tuple[int, ...], ...]
 
 # 64-bit key is permuted according to the following permutation
 # table, PC-1. The 56th bit (0 based indexing) of the original
@@ -40,35 +23,6 @@ pc1 = (
     (21, 13, 5, 28, 20, 12, 4),
 )
 
-# DES operates on 64 bit blocks using key sizes of 56 bits. The
-# keys are actually stored as being 64 bits long, but every 8th
-# bit in the key is not used
-key_plus = []
-for i in range(8):
-    for j in range(7):
-        index = pc1[i][j] - 1
-        key_plus.append(key_bits[index])
-
-# Split key into left and right halves, C0 and D0, where each
-# half has 28 bits
-c = [key_plus[:28]]
-d = [key_plus[28:]]
-
-# Now create blocks Cn and Dn, 1 <= n <= 16. Each pair of blocks
-# Cn and Dn is formed from the previous pair Cn-1 and Dn-1 using
-# the following left shifts of the previous block
-#
-# To do a left shift, move each bit one place to the left, except
-# for the first bit, which is cycled to the end of the block
-shifts = (1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1)
-
-for i in range(16):
-    # Obtain Cn and Dn from Cn-1 and Dn-1 by left shifting
-    c_i = c[i][shifts[i] :] + c[i][: shifts[i]]
-    d_i = d[i][shifts[i] :] + d[i][: shifts[i]]
-    c.append(c_i)
-    d.append(d_i)
-
 # Now form the keys Kn, for 1 <= n <= 16, by applying the PC-2
 # permutation table to each of the concatenated pairs CnDn. Each
 # pair has 56 bits, but PC-2 only uses 48 of these
@@ -83,26 +37,11 @@ pc2 = (
     (46, 42, 50, 36, 29, 32),
 )
 
-subkeys = []
-for cn, dn in zip(c[1:], d[1:]):
-    k_i = []
-    cd = cn + dn
-    for i in range(8):
-        for j in range(6):
-            index = pc2[i][j] - 1
-            k_i.append(cd[index])
-    subkeys.append(k_i)
-
-# Message should be in blocks of 64 bit, if less than that it should
-# be padded with zeores
-message = 0x74616E7573687269
-message_bits = hex_to_bin(message)
-
 # There is an initial permutation IP of 64 bits of the message data
 # M. This rearranges the bits according to the following table, where
 # the entries in the table show the new arrangement of the bits from
 # their initial order
-ip_table = (
+ip = (
     (58, 50, 42, 34, 26, 18, 10, 2),
     (60, 52, 44, 36, 28, 20, 12, 4),
     (62, 54, 46, 38, 30, 22, 14, 6),
@@ -113,13 +52,8 @@ ip_table = (
     (63, 55, 47, 39, 31, 23, 15, 7),
 )
 
-# Initial Permutation (IP)
-ip = []
-for i in range(8):
-    for j in range(8):
-        index = ip_table[i][j] - 1
-        ip.append(message_bits[index])
-
+# E-bit selection table is used to expand each block Rn-1. This is done
+# by repeating some of the bits of Rn-1
 e_table = (
     (32, 1, 2, 3, 4, 5),
     (4, 5, 6, 7, 8, 9),
@@ -187,6 +121,8 @@ s8 = (
     (2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11),
 )
 
+# P yields a 32-bit output from a 32-bit input by permuting the bits
+# of the input block
 p = (
     (16, 7, 20, 21),
     (29, 12, 28, 17),
@@ -198,8 +134,66 @@ p = (
     (22, 11, 4, 25),
 )
 
+ip_inverse = (
+    (40, 8, 48, 16, 56, 24, 64, 32),
+    (39, 7, 47, 15, 55, 23, 63, 31),
+    (38, 6, 46, 14, 54, 22, 62, 30),
+    (37, 5, 45, 13, 53, 21, 61, 29),
+    (36, 4, 44, 12, 52, 20, 60, 28),
+    (35, 3, 43, 11, 51, 19, 59, 27),
+    (34, 2, 42, 10, 50, 18, 58, 26),
+    (33, 1, 41, 9, 49, 17, 57, 25),
+)
 
-def substitute(table: tuple[tuple[int, ...], ...], block: list[int]):
+
+def hex_to_bin(x: int) -> list[int]:
+    x_bits = [0] * BLOCK_SIZE
+    for i in range(BLOCK_SIZE):
+        x_bits[BLOCK_SIZE - 1 - i] = (x >> i) & 1
+    return x_bits
+
+
+def bin_to_dec(x: list[int]) -> int:
+    decimal = 0
+    for digit in x:
+        decimal = decimal * 2 + digit
+    return decimal
+
+
+def permute(block: list[int], table: BoxType):
+    return [block[index - 1] for row in table for index in row]
+
+
+def generate_subkeys(key_bits: list[int]) -> list[list[int]]:
+    # DES operates on 64 bit blocks using key sizes of 56 bits. The
+    # keys are actually stored as being 64 bits long, but every 8th
+    # bit in the key is not used
+    key_plus = permute(key_bits, pc1)
+    # Split key into left and right halves, C0 and D0, where each
+    # half has 28 bits
+    c = [key_plus[:28]]
+    d = [key_plus[28:]]
+    # Now create blocks Cn and Dn, 1 <= n <= 16. Each pair of blocks
+    # Cn and Dn is formed from the previous pair Cn-1 and Dn-1 using
+    # the following left shifts of the previous block
+    #
+    # To do a left shift, move each bit one place to the left, except
+    # for the first bit, which is cycled to the end of the block
+    shifts = (1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1)
+    for i in range(16):
+        # Obtain Cn and Dn from Cn-1 and Dn-1 by left shifting
+        # c[i] and d[i] represent Cn-1 and Dn-1 respectively
+        c_i = c[i][shifts[i] :] + c[i][: shifts[i]]
+        d_i = d[i][shifts[i] :] + d[i][: shifts[i]]
+        c.append(c_i)
+        d.append(d_i)
+    # First element in c and d are C0 and D0 which are not to be used
+    # for creating the subkeys
+    subkeys = [permute(ci + di, pc2) for (ci, di) in zip(c[1:], d[1:])]
+    return subkeys
+
+
+def substitute(block: list[int], table: BoxType):
     # First and last bits of block represent in base 2 a number in the
     # decimal range [0, 3] (binary 0 to 11), representing a row
     row = bin_to_dec(block[0::5])
@@ -213,82 +207,73 @@ def substitute(table: tuple[tuple[int, ...], ...], block: list[int]):
     return hex_to_bin(table[row][col])[-4:]
 
 
-# Divide the permuted block IP into left half L0 of 32 bits, and a
-# right half R0 of 32 bits
-l = [ip[:32]]
-r = [ip[32:]]
-s_tables = (s1, s2, s3, s4, s5, s6, s7, s8)
-
-# Now proceed through 16 iterations, 1 <= n <= 16, using a function f
-# which operates on 2 blocks: a data block of 32 bits and a key Kn of
-# 48 bits - to produce a block of 32 bits
-#
-# Ln = Rn-1
-# Rn = Ln-1 + f(Rn-1, Kn)
-# Where + denote XOR addition (bit-by-bit addition modulo 2)
-for i in range(16):
+def feistel(block: list[int], subkey: list[int]):
     # To calculate f, we first expand each block Rn-1 from 32 bits to
     # 48 bits
-    e_r = []
-    for j in range(8):
-        for k in range(6):
-            index = e_table[j][k] - 1
-            e_r.append(r[i][index])
+    e = permute(block, e_table)
     # XOR the output E(Rn-1) with key K(n)
-    f_x = []
-    for er_i, k_i in zip(e_r, subkeys[i]):
-        f_x.append(er_i ^ k_i)
-    # We use group of 6 bits from the XORed output as addresses
-    # in S-box tables, located at that address will be a 4 digit
-    # number
+    f_x = [e_i ^ k_i for (e_i, k_i) in zip(e, subkey)]
+    # The expanded 48 bits are divided into 8 groups of 6 bits, and use
+    # them as addresses in S-box tables. Each group of 6 bits will give
+    # us an address in a different S-box
     #
     # Kn + E(Rn-1) = B1B2B3B4B5B6B7B8
     # Where each Bi is a group of 6 bits
     #
     # Now calculate
     # S1(B1)S2(B2)S3(B3)S4(B4)S5(B5)S6(B6)S7(B7)S8(B8)
-    # Where Si(Bi) referres to the output of the ith S-box
+    #
+    # Where Si(Bi) referres to the output of the ith S-box, which takes
+    # a 6-bit block as input and yields a 4-bit block as output
     f_s = []
     curr = 0
+    s_tables = (s1, s2, s3, s4, s5, s6, s7, s8)
     for s in s_tables:
-        b = f_x[curr : curr + 6]
-        f_s += substitute(s, b)
+        block = f_x[curr : curr + 6]
+        f_s += substitute(block, s)
         curr += 6
     # Final stage in the calculation of f is to do a permutation P
     # of the S-box output to obtain the final value of f
     #
     # f = P(S1(B1)S2(B2)...S8(B8))
-    f = []
-    for j in range(8):
-        for k in range(4):
-            index = p[j][k] - 1
-            f.append(f_s[index])
+    f = permute(f_s, p)
+    return f
 
-    r_i = []
-    # l[i] represents Ln-1
-    for ln, fn in zip(l[i], f):
-        r_i.append(ln ^ fn)
 
-    # r[i] represents Rn-1
-    l.append(r[i])
-    r.append(r_i)
+def des_rounds(initial_permutation: list[int], subkeys: list[list[int]]):
+    l = initial_permutation[:32]
+    r = initial_permutation[32:]
+    for i in range(16):
+        # Now proceed through 16 iterations, 1 <= n <= 16, using a function f
+        # which operates on 2 blocks: a data block of 32 bits and a key Kn of
+        # 48 bits - to produce a block of 32 bits
+        #
+        # Ln = Rn-1
+        # Rn = Ln-1 + f(Rn-1, Kn)
+        # Where + denote XOR addition (bit-by-bit addition modulo 2)
+        l_i = r
+        f = feistel(r, subkeys[i])
+        r_i = [l_bit ^ f_bit for l_bit, f_bit in zip(l, f)]
+        # Update Ln and Rn
+        l, r = l_i, r_i
+    return r + l
 
-ip_inverse = (
-    (40, 8, 48, 16, 56, 24, 64, 32),
-    (39, 7, 47, 15, 55, 23, 63, 31),
-    (38, 6, 46, 14, 54, 22, 62, 30),
-    (37, 5, 45, 13, 53, 21, 61, 29),
-    (36, 4, 44, 12, 52, 20, 60, 28),
-    (35, 3, 43, 11, 51, 19, 59, 27),
-    (34, 2, 42, 10, 50, 18, 58, 26),
-    (33, 1, 41, 9, 49, 17, 57, 25),
-)
 
-# At the end of the 16th round we have the blocks L16 and R16. We then reverse
-# the order of the 2 blocks into the 64-bit block
-final_permutation = r[16] + l[16]
-ciphertext = []
-for i in range(8):
-    for j in range(8):
-        index = ip_inverse[i][j] - 1
-        ciphertext.append(final_permutation[index])
+def des_encrypt(message: int, key: int):
+    key_bits = hex_to_bin(key)
+    message_bits = hex_to_bin(message)
+    subkeys = generate_subkeys(key_bits)
+    initial_permutation = permute(message_bits, ip)
+    ciphertext = des_rounds(initial_permutation, subkeys)
+    # Apply a final permutation IP^-1
+    return permute(ciphertext, ip_inverse)
+
+
+# Key should be of 64 bits
+key = 0x133457799BBCDFF1
+# Message should be in blocks of 64 bit, if less than that it should
+# be padded with zeores
+message = 0x74616E7573687269
+ciphertext = des_encrypt(message, key)
+
+assert 0x1C43A6059EAD0F58 == bin_to_dec(ciphertext)
