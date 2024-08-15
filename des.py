@@ -7,6 +7,7 @@ from typing import Tuple
 # permutation among 2^64 possible arrangements, each of which may
 # be a 0 or 1.
 BLOCK_SIZE = 64
+ROUNDS = 16
 BoxType = Tuple[Tuple[int, ...], ...]
 
 # 64-bit key is permuted according to the following permutation
@@ -180,7 +181,7 @@ def generate_subkeys(key_bits: list[int]) -> list[list[int]]:
     # To do a left shift, move each bit one place to the left, except
     # for the first bit, which is cycled to the end of the block
     shifts = (1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1)
-    for i in range(16):
+    for i in range(ROUNDS):
         # Obtain Cn and Dn from Cn-1 and Dn-1 by left shifting
         # c[i] and d[i] represent Cn-1 and Dn-1 respectively
         c_i = c[i][shifts[i] :] + c[i][: shifts[i]]
@@ -241,9 +242,11 @@ def feistel(block: list[int], subkey: list[int]):
 
 
 def des_rounds(initial_permutation: list[int], subkeys: list[list[int]]):
+    # Divide the permuted block into a left half L0 of 32 bits, and a right
+    # half R0 of 32 bits
     l = initial_permutation[:32]
     r = initial_permutation[32:]
-    for i in range(16):
+    for i in range(ROUNDS):
         # Now proceed through 16 iterations, 1 <= n <= 16, using a function f
         # which operates on 2 blocks: a data block of 32 bits and a key Kn of
         # 48 bits - to produce a block of 32 bits
@@ -256,6 +259,8 @@ def des_rounds(initial_permutation: list[int], subkeys: list[list[int]]):
         r_i = [l_bit ^ f_bit for l_bit, f_bit in zip(l, f)]
         # Update Ln and Rn
         l, r = l_i, r_i
+    # At the end of 16th round we have block L16 and R16. Reverse the order of
+    # the 2 blocks into the 64-bit block R16L16
     return r + l
 
 
