@@ -150,14 +150,14 @@ ip_inverse = (
 )
 
 
-def hex_to_bin(x: int) -> list[int]:
+def hex_to_bin(x: int) -> Block:
     x_bits = [0] * BLOCK_SIZE
     for i in range(BLOCK_SIZE):
         x_bits[BLOCK_SIZE - 1 - i] = (x >> i) & 1
     return x_bits
 
 
-def bin_to_dec(x: list[int]) -> int:
+def bin_to_dec(x: Block) -> int:
     decimal = 0
     for digit in x:
         decimal = decimal * 2 + digit
@@ -211,7 +211,7 @@ def substitute(block: Block, table: BoxType) -> Block:
     return hex_to_bin(table[row][col])[-4:]
 
 
-def feistel(block: Block, subkey: list[int]) -> Block:
+def feistel(block: Block, subkey: Block) -> Block:
     # To calculate f, we first expand each block Rn-1 from 32 bits to
     # 48 bits
     e = permute(block, e_table)
