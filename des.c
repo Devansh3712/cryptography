@@ -292,12 +292,12 @@ int* desDecrypt(uint64_t message, uint64_t key) {
 
 int main() {
 	uint64_t key = 0x133457799BBCDFF1;
-	uint64_t message = 0x0123456789ABCDEF;
+	uint64_t message = 0x6D61686972616161;
 
 	int* encrypted = desEncrypt(message, key);
-	assert(binToDec(encrypted, BLOCK_SIZE) == 0x85E813540F0AB405);
+	assert(binToDec(encrypted, BLOCK_SIZE) == 0x8C5AEBACBF330817);
 
-	int* decrypted = desDecrypt(0x85E813540F0AB405, key);
+	int* decrypted = desDecrypt(0x8C5AEBACBF330817, key);
 	assert(binToDec(decrypted, BLOCK_SIZE) == message);
 
 	free(encrypted);
