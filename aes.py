@@ -1,11 +1,5 @@
-# Internally, the algorithms for AES block ciphers are performed on a
-# 2D array of bytes called state.
-#
-# s[r, c] = in[r + 4c]
-# out[r + 4c] = s[r, c]
-#
-# r -> row index -> 0 <= r <= 4
-# c -> column index -> 0 <= c <= 4
+# Reference:
+# https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
 
 # fmt: off
 # Let 'b' denote an input byte to SBox(), and let 'c' denote the constant
@@ -41,14 +35,69 @@ s_box = (
 # SubBytes() is an invertible, non-linear transformation of the state in
 # which a S-box is applied independently to each byte in the state.
 def sub_bytes(state: list[list[int]]) -> list[list[int]]:
-    result = [[0 for _ in range(4)] for _ in range(4)]
     for r in range(4):
         for c in range(4):
             b = state[r][c]
             row = (b >> 4) & 0xF
             col = b & 0xF
-            result[r][c] = s_box[row][col]
-    return result
+            state[r][c] = s_box[row][col]
+    return state
+
+
+# ShiftRows() is a transformation of the state in which the bytes in the
+# last 3 rows of the state are cyclically shifted. The number of positions
+# by which the bytes are shifted depends on the row index r.
+#
+# s'[r, c] = s[r, (c + r) mod 4]
+# for 0 <= r < 4 and 0 <= c < 4
+def shift_rows(state: list[list[int]]) -> list[list[int]]:
+    for r in range(4):
+        for c in range(4):
+            state[r] = state[c:r] + state[:c]
+    return state
+
+
+# Multiplication in GF(2^8) is defined on 2 bytes in two steps:
+# 1) 2 polynomials that represent the bytes are multiplied as polynomials
+# 2) Resulting polynomial is reduced module the following fixed polynomial
+#    m(x) = x^8 + x^4 + x^3 + x + 1
+#
+# Product b•2 can be expressed as:
+# x_times(b) = { b6b5b4b3b2b10 if b7 == 0
+#                b6b5b4b3b2b10 ⊕ 00011011 if b7 = 1}
+def gf_mul(m: int, n: int) -> int:
+    result = 0
+    for _ in range(8):
+        if n & 1:
+            result ^= m
+        carry = m & 0x80
+        m <<= 1
+        if carry:
+            # Irreducible polynomial
+            m ^= 0x1B
+        n >>= 1
+    return result & 0xFF
+
+
+# MixColumns() is a transformation of the state that multiplies each of the
+# 4 columns of the state by a single fixed matrix
+#
+# [a0, a1, a2, a3] = [{02}, {01}, {01}, {03}]
+def mix_columns(state: list[list[int]]) -> list[list[int]]:
+    matrix = (
+        (2, 3, 1, 1),
+        (1, 2, 3, 1),
+        (1, 1, 2, 3),
+        (3, 1, 1, 2),
+    )
+    for c in range(4):
+        cols = [state[r][c] for r in range(4)]
+        for r in range(4):
+            result = 0
+            for col, a in zip(cols, matrix[r]):
+                result ^= gf_mul(col, a)
+            state[r][c] = result
+    return state
 
 
 # Arguments for Cipher are:
@@ -60,7 +109,13 @@ def sub_bytes(state: list[list[int]]) -> list[list[int]]:
 # AES-192(in, key) = Cipher(in, 12, KeyExpansion(key))
 # AES-256(in, key) = Cipher(in, 14, KeyExpansion(key))
 def cipher(input: list[int], rounds: int, round_keys):
-    state = [[0 for _ in range(4)] for _ in range(4)]
-    for r in range(4):
-        for c in range(4):
-            state[r][c] = input[r + 4 * c]
+    # Internally, the algorithms for AES block ciphers are performed on a
+    # 2D array of bytes called state.
+    #
+    # s[r, c] = in[r + 4c]
+    # out[r + 4c] = s[r, c]
+    state = [[input[r + 4 * c] for c in range(4)] for r in range(4)]
+    for round in range(rounds):
+        state = sub_bytes(state)
+        state = shift_rows(state)
+        state = mix_columns(state)
