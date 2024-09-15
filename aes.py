@@ -1,6 +1,18 @@
 # Reference:
 # https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
 
+# The block ciphers AES-128, AES-192 and AES-256 differ in 3 aspects
+# 1) Length of key
+# 2) Number of rounds -> determines the size of required key schedule
+# 3) Specification of recursion in KeyExpansion()
+#
+# Number of rounds is denoted by nr and the number of words of the key
+# is denoted by nk
+#
+# AES-128 -> nk = 4, nr = 10
+# AES-192 -> nk = 6, nr = 12
+# AES-256 -> nk = 8, nr = 14
+
 # fmt: off
 # Let 'b' denote an input byte to SBox(), and let 'c' denote the constant
 # byte 01100011. The output byte b' = SBox(b) is constructed by 2
@@ -31,6 +43,57 @@ s_box = (
 )
 # fmt: on
 
+r_con = (0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36)
+
+
+def sub_word(word: list[int]) -> list[int]:
+    return [s_box[byte >> 4][byte & 0xF] for byte in word]
+
+
+# KeyExpansion() is a routine that is applied to the key to generateround
+# 4 * (rounds + 1) words. 4 words are generated for each (round + 1) applications
+# of AddRoundKey() in Cipher(). The output consists of a linear array of words,
+# denoted by w[i] where 0 <= i < 4 * (rounds + 1)
+#
+# It invokes 10 fixed words denoted by Rcon[j] for 1 <= j <= 10, known as round
+# constants. For AES-128, a distinct round constant is called in generation of
+# each of the 10 round keys.
+#
+# 2 transformations on words are called
+# 1) RotWord([a0, a1, a2, a3]) = [a1, a2, a3, a0]
+# 2) SubWord([a0, a1, a2, a3]) = [SBox(a0), SBox(a1), SBox(s2), SBox(a3)]
+def key_expansion(key: list[int], nk: int, nr: int) -> list[list[int]]:
+    # Each word is of 4 bytes, output is of size 4 * (nr + 1)
+    w = [[0 for _ in range(4)] for _ in range(4 * (nr + 1))]
+    for i in range(nk):
+        w[i] = key[4 * i : 4 * (i + 1)]
+
+    for i in range(nk, 4 * (nr + 1)):
+        temp = w[i - 1].copy()
+        if i % nk == 0:
+            temp = sub_word(temp[1:] + temp[:1])
+            temp[0] ^= r_con[i // nk - 1]
+        elif nk > 6 and i % nk == 4:
+            temp = sub_word(temp)
+        for j in range(4):
+            w[i][j] = w[i - nk][j] ^ temp[j]
+    return w
+
+
+# AddRoundKey() is a transformation of the state in which a round key is
+# combined with the state by applying XOR operation.
+#
+# [s'[0,c], s'[1,c], s'[2,c], s'[3,c]] = [s[0, c], s[1, c], s[2, c], s[3, c]] ⊕ w[4 * round + c]
+def add_round_key(
+    state: list[list[int]], round_key: list[list[int]]
+) -> list[list[int]]:
+    for r in range(4):
+        for c in range(4):
+            # Round key is stored row-wise and has to be used
+            # column-wise, so it is indexed using round_key[c][r]
+            state[r][c] ^= round_key[c][r]
+    return state
+
 
 # SubBytes() is an invertible, non-linear transformation of the state in
 # which a S-box is applied independently to each byte in the state.
@@ -38,9 +101,7 @@ def sub_bytes(state: list[list[int]]) -> list[list[int]]:
     for r in range(4):
         for c in range(4):
             b = state[r][c]
-            row = (b >> 4) & 0xF
-            col = b & 0xF
-            state[r][c] = s_box[row][col]
+            state[r][c] = s_box[b >> 4][b & 0xF]
     return state
 
 
@@ -51,9 +112,8 @@ def sub_bytes(state: list[list[int]]) -> list[list[int]]:
 # s'[r, c] = s[r, (c + r) mod 4]
 # for 0 <= r < 4 and 0 <= c < 4
 def shift_rows(state: list[list[int]]) -> list[list[int]]:
-    for r in range(4):
-        for c in range(4):
-            state[r] = state[c:r] + state[:c]
+    for r in range(1, 4):
+        state[r] = state[r][r:] + state[r][:r]
     return state
 
 
@@ -108,14 +168,38 @@ def mix_columns(state: list[list[int]]) -> list[list[int]]:
 # AES-128(in, key) = Cipher(in, 10, KeyExpansion(key))
 # AES-192(in, key) = Cipher(in, 12, KeyExpansion(key))
 # AES-256(in, key) = Cipher(in, 14, KeyExpansion(key))
-def cipher(input: list[int], rounds: int, round_keys):
+def cipher(input: list[int], nr: int, w: list[list[int]]):
     # Internally, the algorithms for AES block ciphers are performed on a
     # 2D array of bytes called state.
     #
     # s[r, c] = in[r + 4c]
     # out[r + 4c] = s[r, c]
     state = [[input[r + 4 * c] for c in range(4)] for r in range(4)]
-    for round in range(rounds):
+    state = add_round_key(state, w[0:4])
+    for round in range(1, nr):
         state = sub_bytes(state)
         state = shift_rows(state)
         state = mix_columns(state)
+        state = add_round_key(state, w[4 * round : 4 * (round + 1)])
+    state = sub_bytes(state)
+    state = shift_rows(state)
+    state = add_round_key(state, w[4 * nr : 4 * (nr + 1)])
+    return state
+
+
+# fmt: off
+key = [
+    0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C
+]
+input = [
+    0x32, 0x43, 0xF6, 0xA8, 0x88, 0x5A, 0x30, 0x8D, 0x31, 0x31, 0x98, 0xA2, 0xE0, 0x37, 0x07, 0x34
+]
+# fmt: on
+got = cipher(input, 10, key_expansion(key, 4, 10))
+want = [
+    [0x39, 0x02, 0xDC, 0x19],
+    [0x25, 0xDC, 0x11, 0x6A],
+    [0x84, 0x09, 0x85, 0x0B],
+    [0x1D, 0xFB, 0x97, 0x32],
+]
+assert got == want
